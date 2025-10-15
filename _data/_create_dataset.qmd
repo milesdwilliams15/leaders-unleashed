@@ -1,0 +1,119 @@
+---
+title: "Construct the analysis dataset"
+format: html
+---
+
+## Setup
+
+```{r}
+library(tidyverse)    # for syntax
+library(peacesciencer)# for the peacesciencer API
+library(democracyData)# access to polity data
+library(vdemdata)     # access to v-dem data
+library(here)         # for file navigation
+source(
+  "https://raw.githubusercontent.com/milesdwilliams15/foreign-figures/refs/heads/main/_helpers/peacesciencer_extras.R"
+) # helpers
+```
+
+## Data 
+
+Using the peacesciencer R package, this code will create a leader-year dataset from 1875 to 2004 and then populate it with relevant variables for the analysis.
+
+
+```{r}
+## conflict data
+create_stateyears(
+  subset_years = 1816:2014
+) |>
+  add_gml_mic(level = 4) -> micdt
+
+mysum <- function(x) {
+  cx <- 0
+  for(i in 1:length(x)) {
+    if(i == 1) {
+      cx[i] <- 0
+    } else {
+      cx[i] <- (x[i-1] + cx[i-1]) * x[i-1]
+    } 
+  }
+  cx
+}
+
+micdt |>
+  arrange(year) |>
+  group_by(ccode) |>
+  mutate(
+    peace_spell = mysum(
+      1 - gml_mic_ongoing
+    )
+  ) |>
+  ungroup() -> micdt
+
+## executive restraints data
+plty <- download_polity_annual()
+plty |>
+  transmute(
+    ccode = polity_annual_ccode,
+    year,
+    polity2, 
+    xconst = ifelse(
+      xconst < 0, NA, xconst
+    )
+  ) -> plty
+
+vd <- vdem
+vd |>
+  transmute(
+    ccode = countrycode::countrycode(
+      country_name, "country.name", "cown"
+    ),
+    year,
+    v2x_polyarchy,
+    v2xnp_pres
+  ) -> vd
+
+create_leaderyears(
+  standardize = "cow"
+) |>
+  filter(year %in% 1875:2004) |>
+  add_lwuf() |>
+  group_by(ccode, year) |>
+  summarize(
+    across(
+      ends_with("_mean"), 
+      ~ mean(.x, na.rm = T)
+    )
+  ) |>
+  ungroup() |>
+  left_join(
+    micdt, by = c("ccode", "year")
+  ) |>
+  left_join(
+    plty, by = c("ccode", "year")
+  ) |>
+  left_join(
+    vd, by = c("ccode", "year")
+  ) -> dt
+  
+create_stateyears() |>
+  add_nmc() |>
+  add_cow_majors() |>
+  add_contiguity() -> controls
+
+dt |>
+  left_join(controls) -> dt
+```
+
+Save the dataset:
+
+```{r}
+write_csv(
+  dt,
+  here(
+    "_data",
+    "_leader_year_data.csv"
+  )
+)
+```
+
