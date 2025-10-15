@@ -1,0 +1,363 @@
+---
+title: "Analysis code"
+format: html
+---
+
+## Setup
+
+```{r}
+library(tidyverse)
+library(mgcv)
+library(ggregtab)
+library(sjPlot)
+library(GGally)
+library(here)
+library(coolorrr)
+library(socsci)
+set_palette(
+  diverging = c("navy", "gray", "red")
+)
+
+saveit <- function(num, ht = 4, wt = 6) {
+  ggsave(
+    here::here(
+      "_analysis",
+      paste0("fig", num, ".png")
+    ),
+    height = ht,
+    width = wt,
+    dpi = 500
+  )
+}
+
+my_theme <- function() {
+  theme_bw() +
+    theme(
+      axis.title.x = element_text(size = 12),
+      axis.title.y = element_text(size = 12),
+      plot.title.position = "plot",
+      plot.caption.position = "plot",
+      plot.title = element_text(hjust = 0),
+      plot.subtitle = element_text(hjust = 0),
+      plot.caption = element_text(hjust = 0, size = 12)
+    )
+}
+
+theme_set(my_theme())
+```
+
+
+## Data
+
+```{r}
+dt <- read_csv(
+  here("_data", "_leader_year_data.csv")
+)
+```
+
+## Descriptive analysis
+
+```{r}
+#| fig-height: 4
+#| fig-width: 6
+
+dt |>
+  select(
+    ends_with("_mean")
+  ) |>
+  distinct() |>
+  transmute(
+    "theta[1]" = theta1_mean,
+    "theta[2]" = theta2_mean,
+    "theta[3]" = theta3_mean,
+    "theta[4]" = theta4_mean
+  ) |>
+  ggpairs(
+    upper = list(continuous = wrap("cor", size = 3)),
+    lower = list(continuous = wrap("points", alpha = 0.6, size = 1)),
+    diag = list(continuous = wrap("densityDiag"))
+  ) +
+  labs(
+    caption = str_wrap(
+      "Figure 1: Correlations between the four measures of leader willingness to use force (LWUF) developed by Carter and Smith (2020), 1875-2004."
+    )
+  )
+saveit(1)
+```
+
+## Regression analysis
+
+The main outcome of interest is whether a leader initiates a MID against any other country. Using {mgcv} I'll estimate a generalized additive logit with leader willingness to use force (LWUF) interacted with polity using a nonlinear joint function.
+
+```{r}
+## create a base formula
+base_form <- gml_mic_onset_init ~
+  cinc +
+  land + sea + cowmaj +
+  peace_spell + 
+  I(peace_spell^2) +
+  I(peace_spell^3) +
+  s(ccode, bs = "re") 
+
+bin <- function(x) {
+  as.factor((x > median(x, na.rm = T)) + 0)
+}
+
+dt |>
+  group_by(year) |>
+  mutate(
+    pdem = as.factor((polity2 > 5) + 0),
+    pcon = as.factor((xconst > 1) + 0),
+    vdem = bin(v2x_polyarchy),
+    vcon = bin(v2xnp_pres),
+    pcat = frcode(
+      pdem == 0 & pcon == 0 ~ "Unconstrained Non-Dem.",
+      pdem == 0 & pcon == 1 ~ "Constrained Non-Dem.",
+      pdem == 1 & pcon == 0 ~ "Unconstrained Dem.",
+      pdem == 1 & pcon == 1 ~ "Constrained Dem."
+    ),
+    vcat = frcode(
+      vdem == 0 & vcon == 0 ~ "Unconstrained Non-Dem.",
+      vdem == 0 & vcon == 1 ~ "Constrained Non-Dem.",
+      vdem == 1 & vcon == 0 ~ "Unconstrained Dem.",
+      vdem == 1 & vcon == 1 ~ "Constrained Dem."
+    )
+  ) -> dt
+
+## set-up an iterative process to estimate the models
+### main models
+list(
+  "Model 1" = update(
+    base_form, . ~ s(theta1_mean, by = pcon) + pcon + pdem + .
+  ),
+  "Model 2" = update(
+    base_form, . ~ s(theta2_mean, by = pcon) + pcon + pdem + .
+  ),
+  "Model 3" = update(
+    base_form, . ~ s(theta3_mean, by = pcon) + pcon + pdem + .
+  ),
+  "Model 4" = update(
+    base_form, . ~ s(theta4_mean, by = pcon) + pcon + pdem + .
+  ),
+  "Model 5" = update(
+    base_form, . ~ s(theta1_mean, by = vcon) + vcon + vdem + .
+  ),
+  "Model 6" = update(
+    base_form, . ~ s(theta2_mean, by = vcon) + vcon + vdem + .
+  ),
+  "Model 7" = update(
+    base_form, . ~ s(theta3_mean, by = vcon) + vcon + vdem + .
+  ),
+  "Model 8" = update(
+    base_form, . ~ s(theta4_mean, by = vcon) + vcon + vdem + .
+  )
+) |>
+  map(
+    ~ gam(
+      .x,
+      data = dt,
+      family = binomial,
+      method = "REML"
+    )
+  ) -> logit_models
+
+### using alternative categories
+list(
+  "Model 9" = update(
+    base_form, . ~ s(theta1_mean, by = pcat) + pcat + .
+  ),
+  "Model 10" = update(
+    base_form, . ~ s(theta2_mean, by = pcat) + pcat + .
+  ),
+  "Model 11" = update(
+    base_form, . ~ s(theta3_mean, by = pcat) + pcat + .
+  ),
+  "Model 12" = update(
+    base_form, . ~ s(theta4_mean, by = pcat) + pcat + .
+  ),
+  "Model 13" = update(
+    base_form, . ~ s(theta1_mean, by = vcat) + vcat + .
+  ),
+  "Model 14" = update(
+    base_form, . ~ s(theta2_mean, by = vcat) + vcat + .
+  ),
+  "Model 15" = update(
+    base_form, . ~ s(theta3_mean, by = vcat) + vcat + .
+  ),
+  "Model 16" = update(
+    base_form, . ~ s(theta4_mean, by = vcat) + vcat + .
+  )
+) |>
+  map(
+    ~ gam(
+      .x,
+      data = dt,
+      family = binomial,
+      method = "REML"
+    )
+  ) -> logit_models_cat
+```
+
+
+
+```{r}
+#| fig-height: 12
+#| fig-width: 6
+library(patchwork)
+ps <- list()
+for(i in 1:length(logit_models)) {
+  ps[[i]] <- plot_model(
+    logit_models[[i]],
+    type = "pred",
+    terms = names(model.frame(logit_models[[i]]))[c(11, 2)],
+    ci.lvl = .834
+  ) +
+    labs(
+      title = NULL,
+      subtitle = paste0("Model ", i),
+      x = NULL,
+      y = NULL,
+      color = "Ex. Constraints?",
+      fill = "Ex. Constraints?"
+    ) +
+    ggpal(
+      type = "binary",
+      aes = "color",
+      labels = c("No", "Yes")
+    ) +
+    ggpal(
+      type = "binary",
+      aes = "fill",
+      labels = c("No", "Yes")
+    ) +
+    theme(
+      plot.subtitle = element_text(hjust = .5),
+      plot.title.position = "plot"
+    )
+}
+wrap_plots(ps, ncol = 2) +
+  plot_layout(
+    guides = "collect"
+  ) &
+  theme(
+    legend.position = "bottom",
+    legend.title.position = "top"
+  )
+saveit(2, 12, 6)
+```
+
+
+
+```{r}
+#| fig-height: 3
+#| fig-width: 6
+
+bind_rows(
+  dt |>
+    group_by(pcon, pdem) |>
+    count() |>
+    ungroup() |>
+    drop_na() |>
+    mutate(
+      pct = n / sum(n)
+    ) |>
+    transmute(
+      measure = "Polity 5",
+      type = c("Unconstrained Non-democracy",
+               "Constrained Non-democracy",
+               "Constrained Democracy"),
+      value = paste0(
+        scales::comma(n), " (", scales::percent(pct, 1), ")"
+      )
+    ),
+  tibble(
+    measure = "Polity 5",
+    type = "Unconstrained Democracy",
+    value = "0 (0%)"
+  ),
+  dt |>
+    group_by(vcon, vdem) |>
+    count() |>
+    ungroup() |>
+    drop_na() |>
+    mutate(
+      pct = n / sum(n)
+    ) |>
+    transmute(
+      measure = "V-Dem",
+      type = c("Unconstrained Non-democracy",
+               "Unconstrained Democracy",
+               "Constrained Non-democracy",
+               "Constrained Democracy"),
+      value = paste0(
+        scales::comma(n), " (", scales::percent(pct, 1), ")"
+      )
+    )
+) |>
+  ggplot() +
+  aes(x = 1, y = type) +
+  facet_wrap(~ measure, ncol = 2) +
+  geom_tile(
+    fill = "white",
+    color = "black"
+  ) +
+  geom_text(
+    aes(label = value)
+  ) +
+  labs(
+    x = "Count (%) of cases",
+    y = NULL,
+    subtitle = "Measure:"
+  ) +
+  theme(
+    panel.grid = element_blank(),
+    axis.ticks = element_blank(),
+    axis.text.x = element_blank(),
+    plot.subtitle = element_text(hjust = .5, face = "bold.italic"),
+    plot.title.position = "panel"
+  )
+saveit(3, 3, 6)
+```
+
+
+
+```{r}
+#| fig-height: 12
+#| fig-width: 8
+library(patchwork)
+ps <- list()
+for(i in 1:length(logit_models_cat)) {
+  ps[[i]] <- plot_model(
+    logit_models_cat[[i]],
+    type = "pred",
+    terms = names(model.frame(logit_models_cat[[i]]))[c(10, 2)],
+    ci.lvl = .834
+  ) +
+    labs(
+      title = NULL,
+      subtitle = paste0("Model ", i + 8),
+      x = NULL,
+      y = NULL,
+      color = "Ex. Constraints?",
+      fill = "Ex. Constraints?"
+    ) +
+    ggpal(
+      aes = "color"
+    ) +
+    ggpal(
+      aes = "fill"
+    ) +
+    theme(
+      plot.subtitle = element_text(hjust = .5),
+      plot.title.position = "panel",
+      legend.position = ifelse(
+        i < 5, "none", "right"
+      )
+    )
+}
+wrap_plots(ps, ncol = 2) +
+  plot_layout(
+    guides = "collect"
+  )
+saveit(4, 12, 8)
+```
