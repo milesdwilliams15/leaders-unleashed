@@ -76,12 +76,7 @@ dt |>
     upper = list(continuous = wrap("cor", size = 3)),
     lower = list(continuous = wrap("points", alpha = 0.6, size = 1)),
     diag = list(continuous = wrap("densityDiag"))
-  ) +
-  labs(
-    caption = str_wrap(
-      "Figure 1: Correlations between the four measures of leader willingness to use force (LWUF) developed by Carter and Smith (2020), 1875-2004."
-    )
-  )
+  ) 
 saveit(1)
 ```
 

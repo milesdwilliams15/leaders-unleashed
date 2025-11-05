@@ -1,0 +1,32 @@
+---
+title: "Leaders Unleashed: War Hawks and Executive Constraints"
+author: Miles D. Williams^[Denison University, Granville, OH USA. Contact at mdwilliams@denison.edu.]
+date: "`r Sys.Date()`"
+abstract: "**Abstract**: Write something that's so abstract, that it's abstract"
+format: 
+  docx:
+    reference-doc: word_docx_new_template.docx
+    number-sections: true
+    number-depth: 3
+    fig-dpi: 500
+    fig-align: center
+execute: 
+  echo: false
+  warning: false
+  message: false
+bibliography: ref.bib
+---
+
+***Keywords***: Leaders, Hawkishness, Constraints, War
+
+\newpage
+
+# Introduction
+
+Why do hawks sometimes act like doves? This question relates to a growing body of research on the role that leaders play in international conflict initiation. It already is a well-established finding that leader attributes and psychological traits matter, as do external factors linked to political survival [see @carter2024leader for a recent summary]. Another strand of research focuses on regime type, comparing democracies with autocracies and, within the latter, personalist with non-personalist regimes [@weeks2012strongmen]. This study approaches this question from a different angle, looking at the issue, instead, through the lens of the bargaining model of war. In so doing, it argues, and shows, how leader hawkishness interacts with institutional constraints on executive power. In particular, it shows that hawkish leaders act like doves when other institutions (even in autocratic regimes) have veto power.
+
+This study is made possible by recent advances in the cross-country measurement of leader hawkishness. Building on comprehensive data collection efforts by @ellisetal2015lead and @goemansetal2009ia, @carter2020framework devised a latent measure of leader hawkishness (willingness to use force) using Bayesian item response theory (IRT). This novel measure possesses compelling face validity, performing comparatively well in regression models predicting conflict initiation relative to models that use leader characteristics and psychological traits as independent predictors [@carter2020framework]. It further performs well in predicting conflict-adjacent foreign policy behaviors, such as military expenditures [@carter2024leader].
+
+This measure makes it empirically feasible to go beyond studies that examine the role of executive constraints in predicting country bellicosity to assess how these constraints interact with the degree to which leaders are war hawks. Such an analysis would be intractable if one were forced to do multiple interactions with separate measures of leader characteristics.
+
+The ability to pull off such an analysis offers a chance to empirically verify the argument that unconstrained leaders are more likely to take their countries to war with greater specificity than ever before. Fearon's [-@fearon1995rationalist] well-known presentation of the bargaining model of war demonstrates how factors like uncertainty or commitment problems can lead rational actors to fight, even when doing so is mutually more costly than reaching a negotiated settlement. But other research shows how misalignment between leader costs and benefits from going to war relative to their population's can also lead to costly war if leaders do not have to contend with societal costs while they reap a concentrated share of the benefits. In short, it is possible that a leader is better off going to war, even if their country is not, leading to an "inversion" of the bargaining range. If there are no institutionalized checks and balances, leaders with a preference for war will naturally ride roughshod of other societal interests. Many analyses that focus on regime type as a predictor of conflict initiation are, to varying extents, predicated on this argument. But these studies have lacked a means to quantify whether and to what extent unconstrained leaders actually have a preference for war and, thus, whether this preference is actually what drives the relationship between regime type and conflict.
