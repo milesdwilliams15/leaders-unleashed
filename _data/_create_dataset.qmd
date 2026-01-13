@@ -26,7 +26,7 @@ Using the peacesciencer R package, this code will create a leader-year dataset f
 create_stateyears(
   subset_years = 1816:2014
 ) |>
-  add_gml_mic(level = 4) -> micdt
+  add_icd_mics(level = 4) -> micdt
 
 mysum <- function(x) {
   cx <- 0
@@ -45,7 +45,7 @@ micdt |>
   group_by(ccode) |>
   mutate(
     peace_spell = mysum(
-      1 - gml_mic_ongoing
+      1 - icdmicongoing
     )
   ) |>
   ungroup() -> micdt
