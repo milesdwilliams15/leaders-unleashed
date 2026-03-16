@@ -10,10 +10,12 @@ library(tidyverse)
 library(mgcv)
 library(ggregtab)
 library(sjPlot)
-library(GGally)
 library(here)
 library(coolorrr)
 library(socsci)
+source(
+  here("_helpers", "_helpers_script.R")
+)
 set_palette(
   diverging = c("navy", "gray", "red")
 )
@@ -55,56 +57,17 @@ dt <- read_csv(
 )
 ```
 
-## Descriptive analysis
-
-```{r}
-#| fig-height: 4
-#| fig-width: 6
-
-dt |>
-  select(
-    ends_with("_mean")
-  ) |>
-  distinct() |>
-  transmute(
-    "theta[1]" = theta1_mean,
-    "theta[2]" = theta2_mean,
-    "theta[3]" = theta3_mean,
-    "theta[4]" = theta4_mean
-  ) |>
-  ggpairs(
-    upper = list(continuous = wrap("cor", size = 3)),
-    lower = list(continuous = wrap("points", alpha = 0.6, size = 1)),
-    diag = list(continuous = wrap("densityDiag"))
-  ) 
-saveit(1)
-```
-
 ## Regression analysis
 
 The main outcome of interest is whether a leader initiates a MID against any other country. Using {mgcv} I'll estimate a generalized additive logit with leader willingness to use force (LWUF) interacted with polity using a nonlinear joint function.
 
 ```{r}
-## create a base formula
-base_form <- gml_mic_onset_init ~
-  cinc +
-  land + sea + cowmaj +
-  peace_spell + 
-  I(peace_spell^2) +
-  I(peace_spell^3) +
-  s(ccode, bs = "re") 
-
-bin <- function(x) {
-  as.factor((x > median(x, na.rm = T)) + 0)
-}
-
 dt |>
-  group_by(year) |>
   mutate(
     pdem = as.factor((polity2 > 5) + 0),
     pcon = as.factor((xconst > 1) + 0),
-    vdem = bin(v2x_polyarchy),
-    vcon = bin(v2xnp_pres),
+    vdem = as.factor((v2x_polyarchy > median(v2x_polyarchy, T)) + 0),
+    vcon = as.factor((v2xnp_pres < median(v2xnp_pres, T)) + 0),
     pcat = frcode(
       pdem == 0 & pcon == 0 ~ "Unconstrained Non-Dem.",
       pdem == 0 & pcon == 1 ~ "Constrained Non-Dem.",
@@ -120,31 +83,48 @@ dt |>
   ) -> dt
 
 ## set-up an iterative process to estimate the models
-### main models
+logit_form <- miconset_init ~
+  log(cinc) + log(1+land) + log(1+sea) + cowmaj +
+  micspell + 
+  I(micspell^2) +
+  I(micspell^3) +
+  s(ccode, bs = "re")
 list(
   "Model 1" = update(
-    base_form, . ~ s(theta1_mean, by = pcon) + pcon + pdem + .
+    logit_form, . ~ theta2_mean * pcon + pdem + .
   ),
   "Model 2" = update(
-    base_form, . ~ s(theta2_mean, by = pcon) + pcon + pdem + .
+    logit_form, . ~ theta2_mean * pdem + pcon + .
   ),
   "Model 3" = update(
-    base_form, . ~ s(theta3_mean, by = pcon) + pcon + pdem + .
+    logit_form, . ~ theta2_mean * pcat + .
   ),
   "Model 4" = update(
-    base_form, . ~ s(theta4_mean, by = pcon) + pcon + pdem + .
+    logit_form, . ~ s(theta2_mean, by = pcon) + pcon + pdem + .
   ),
   "Model 5" = update(
-    base_form, . ~ s(theta1_mean, by = vcon) + vcon + vdem + .
+    logit_form, . ~ s(theta2_mean, by = pdem) + pcon + pdem + .
   ),
   "Model 6" = update(
-    base_form, . ~ s(theta2_mean, by = vcon) + vcon + vdem + .
+    logit_form, . ~ s(theta2_mean, by = pcat) + pcat + .
   ),
   "Model 7" = update(
-    base_form, . ~ s(theta3_mean, by = vcon) + vcon + vdem + .
+    logit_form, . ~ theta2_mean * vcon + vdem + .
   ),
   "Model 8" = update(
-    base_form, . ~ s(theta4_mean, by = vcon) + vcon + vdem + .
+    logit_form, . ~ theta2_mean * vdem + vcon + .
+  ),
+  "Model 9" = update(
+    logit_form, . ~ theta2_mean * vcat + .
+  ),
+  "Model 10" = update(
+    logit_form, . ~ s(theta2_mean, by = vcon) + vcon + vdem + .
+  ),
+  "Model 11" = update(
+    logit_form, . ~ s(theta2_mean, by = vdem) + vcon + vdem + .
+  ),
+  "Model 12" = update(
+    logit_form, . ~ s(theta2_mean, by = vcat) + vcat + .
   )
 ) |>
   map(
@@ -156,31 +136,15 @@ list(
     )
   ) -> logit_models
 
-### using alternative categories
 list(
-  "Model 9" = update(
-    base_form, . ~ s(theta1_mean, by = pcat) + pcat + .
+  "Model 1" = update(
+    logit_form, . ~ te(theta2_mean, polity2, k = 5) + .
   ),
-  "Model 10" = update(
-    base_form, . ~ s(theta2_mean, by = pcat) + pcat + .
+  "Model 2" = update(
+    logit_form, . ~ te(theta2_mean, v2xlg_legcon, k = 5) + .
   ),
-  "Model 11" = update(
-    base_form, . ~ s(theta3_mean, by = pcat) + pcat + .
-  ),
-  "Model 12" = update(
-    base_form, . ~ s(theta4_mean, by = pcat) + pcat + .
-  ),
-  "Model 13" = update(
-    base_form, . ~ s(theta1_mean, by = vcat) + vcat + .
-  ),
-  "Model 14" = update(
-    base_form, . ~ s(theta2_mean, by = vcat) + vcat + .
-  ),
-  "Model 15" = update(
-    base_form, . ~ s(theta3_mean, by = vcat) + vcat + .
-  ),
-  "Model 16" = update(
-    base_form, . ~ s(theta4_mean, by = vcat) + vcat + .
+  "Model 3" = update(
+    logit_form, . ~ te(theta2_mean, v2x_polyarchy, k = 5) + .
   )
 ) |>
   map(
@@ -190,169 +154,229 @@ list(
       family = binomial,
       method = "REML"
     )
-  ) -> logit_models_cat
+  ) -> logit_models
+```
+
+```{r}
+logit_models |>
+  map(summary)
 ```
 
 
-
 ```{r}
-#| fig-height: 12
-#| fig-width: 6
 library(patchwork)
-ps <- list()
-for(i in 1:length(logit_models)) {
-  ps[[i]] <- plot_model(
-    logit_models[[i]],
-    type = "pred",
-    terms = names(model.frame(logit_models[[i]]))[c(11, 2)],
-    ci.lvl = .834
-  ) +
-    labs(
-      title = NULL,
-      subtitle = paste0("Model ", i),
-      x = NULL,
-      y = NULL,
-      color = "Ex. Constraints?",
-      fill = "Ex. Constraints?"
-    ) +
-    ggpal(
-      type = "binary",
-      aes = "color",
-      labels = c("No", "Yes")
-    ) +
-    ggpal(
-      type = "binary",
-      aes = "fill",
-      labels = c("No", "Yes")
-    ) +
-    theme(
-      plot.subtitle = element_text(hjust = .5),
-      plot.title.position = "plot"
-    )
+pm <- function(mod, int, x = NULL, clr = NULL, ttl = NULL) {
+  plot_model(mod, "pred", terms = c("theta2_mean", int), ci.lvl = .834) +
+  labs(title = ttl, x = x, y = NULL, color = clr, fill = clr)
 }
-wrap_plots(ps, ncol = 2) +
-  plot_layout(
-    guides = "collect"
-  ) &
-  theme(
-    legend.position = "bottom",
-    legend.title.position = "top"
+
+p1 <- pm(logit_models[[1]], "polity2 [-5, 5]", "LWUF (M2)", "Polity 2", "(A)")
+p2 <- pm(logit_models[[2]], "v2xlg_legcon [.25, .75]", "LWUF (M2)", "Leg. Constraints", "(B)")
+p3 <- pm(logit_models[[3]], "v2x_polyarchy [.25, .75]", "LWUF (M2)", "Polyarchy", "(C)")
+# p4 <- pm(logit_models[[4]], "v2xlg_legcon [.2, .8]", "LWUF (M2)")
+# p5 <- pm(logit_models[[5]], "pdem", "LWUF (M2)")
+# p6 <- pm(logit_models[[6]], "pcat", "LWUF (M2)")
+# p7 <- pm(logit_models[[7]], "vcon", "LWUF (M2)")
+# p8 <- pm(logit_models[[8]], "vdem", "LWUF (M2)")
+# p9 <- pm(logit_models[[9]], "vcat", "LWUF (M2)")
+# p10 <- pm(logit_models[[10]], "vcon", "LWUF (M2)")
+# p11 <- pm(logit_models[[11]], "vdem", "LWUF (M2)")
+# p12 <- pm(logit_models[[12]], "vcat", "LWUF (M2)")
+```
+
+```{r}
+#| fig-height: 4
+#| fig-width: 18
+p1 + p2 + p3 +
+  plot_annotation(
+    title = "Probability of MIC initiation by leaders"
   )
-saveit(2, 12, 6)
+saveit(1, 4, 18)
+```
+
+```{r}
+#| fig-height: 4
+#| fig-width: 18
+draw(
+  logit_models[[1]],
+  se = F,
+  shade = T,
+  select = 1,
+  scheme = 2
+) +
+  labs(
+    title = "(A)",
+    x = "LWUF (M2)",
+    y = "Polity 2"
+  ) -> h1
+draw(
+  logit_models[[2]],
+  se = F,
+  shade = T,
+  select = 1,
+  scheme = 2
+) +
+  labs(
+    title = "(B)",
+    x = "LWUF (M2)",
+    y = "Leg. Constraints"
+  ) -> h2
+draw(
+  logit_models[[3]],
+  se = F,
+  shade = T,
+  select = 1,
+  scheme = 2
+) +
+  labs(
+    title = "(C)",
+    x = "LWUF (M2)",
+    y = "Polyarchy"
+  ) -> h3
+gridExtra::grid.arrange(h1, h2, h3, ncol = 3, nrow = 1)
+saveit(2, 4, 18)
 ```
 
 
-
 ```{r}
-#| fig-height: 3
-#| fig-width: 6
+
+summary(logit_models[[1]]) -> s
+s$s.table |> 
+  as_tibble() |>
+  mutate(
+    term = rownames(s$s.table)
+  ) |>
+  select(term, everything()) -> edf 
+s$p.table |> 
+  as_tibble() |>
+  mutate(
+    term = rownames(s$p.table)
+  ) |>
+  select(term, everything()) -> fix
+
+colnames(edf) <- c("term", "estimate", "std.error", "statistic", "p.value")
+colnames(fix) <- colnames(edf)
+bind_rows(
+  fix, edf
+) |>
+  mutate(
+    conf.low = estimate - 1.96 * std.error,
+    conf.high = estimate + 1.96 * std.error,
+    model = "(1)",
+    N = s$n
+  ) -> s1
+
+summary(logit_models[[2]]) -> s
+s$s.table |> 
+  as_tibble() |>
+  mutate(
+    term = rownames(s$s.table)
+  ) |>
+  select(term, everything()) -> edf 
+s$p.table |> 
+  as_tibble() |>
+  mutate(
+    term = rownames(s$p.table)
+  ) |>
+  select(term, everything()) -> fix
+
+colnames(edf) <- c("term", "estimate", "std.error", "statistic", "p.value")
+colnames(fix) <- colnames(edf)
+bind_rows(
+  fix, edf
+) |>
+  mutate(
+    conf.low = estimate - 1.96 * std.error,
+    conf.high = estimate + 1.96 * std.error,
+    model = "(2)",
+    N = s$n
+  ) -> s2
+
+summary(logit_models[[3]]) -> s
+s$s.table |> 
+  as_tibble() |>
+  mutate(
+    term = rownames(s$s.table)
+  ) |>
+  select(term, everything()) -> edf 
+s$p.table |> 
+  as_tibble() |>
+  mutate(
+    term = rownames(s$p.table)
+  ) |>
+  select(term, everything()) -> fix
+
+colnames(edf) <- c("term", "estimate", "std.error", "statistic", "p.value")
+colnames(fix) <- colnames(edf)
+bind_rows(
+  fix, edf
+) |>
+  mutate(
+    conf.low = estimate - 1.96 * std.error,
+    conf.high = estimate + 1.96 * std.error,
+    model = "(3)",
+    N = s$n
+  ) -> s3
 
 bind_rows(
-  dt |>
-    group_by(pcon, pdem) |>
-    count() |>
-    ungroup() |>
-    drop_na() |>
-    mutate(
-      pct = n / sum(n)
-    ) |>
-    transmute(
-      measure = "Polity 5",
-      type = c("Unconstrained Non-democracy",
-               "Constrained Non-democracy",
-               "Constrained Democracy"),
-      value = paste0(
-        scales::comma(n), " (", scales::percent(pct, 1), ")"
-      )
-    ),
-  tibble(
-    measure = "Polity 5",
-    type = "Unconstrained Democracy",
-    value = "0 (0%)"
-  ),
-  dt |>
-    group_by(vcon, vdem) |>
-    count() |>
-    ungroup() |>
-    drop_na() |>
-    mutate(
-      pct = n / sum(n)
-    ) |>
-    transmute(
-      measure = "V-Dem",
-      type = c("Unconstrained Non-democracy",
-               "Unconstrained Democracy",
-               "Constrained Non-democracy",
-               "Constrained Democracy"),
-      value = paste0(
-        scales::comma(n), " (", scales::percent(pct, 1), ")"
-      )
+  s1, s2, s3
+) -> s
+```
+
+```{r}
+#| fig-height: 8
+#| fig-width: 6
+ggregtab(
+  s,
+  ratio = 1/3,
+  digits = 3
+) +
+  scale_y_discrete(
+    limits = unique(s$term)[c(10, 12:11, 9:1)],
+    labels = c(
+      "Country RE",
+      "te(M2, Polyarchy)",
+      "te(M2, Leg. Con.)",
+      "te(M2, Polity 2)",
+      "Years^3",
+      "Years^2",
+      "Years",
+      "Major Power",
+      "Sea Contiguity (ln)",
+      "Land Contiguity (ln)",
+      "CINC",
+      "(Intercept)"
     )
-) |>
-  ggplot() +
-  aes(x = 1, y = type) +
-  facet_wrap(~ measure, ncol = 2) +
-  geom_tile(
-    fill = "white",
-    color = "black"
-  ) +
-  geom_text(
-    aes(label = value)
-  ) +
-  labs(
-    x = "Count (%) of cases",
-    y = NULL,
-    subtitle = "Measure:"
   ) +
   theme(
-    panel.grid = element_blank(),
-    axis.ticks = element_blank(),
-    axis.text.x = element_blank(),
-    plot.subtitle = element_text(hjust = .5, face = "bold.italic"),
-    plot.title.position = "panel"
+    axis.text.y = element_text(hjust = 0)
   )
-saveit(3, 3, 6)
+saveit(3, 8, 6)
 ```
 
 
 
 ```{r}
-#| fig-height: 12
-#| fig-width: 8
-library(patchwork)
-ps <- list()
-for(i in 1:length(logit_models_cat)) {
-  ps[[i]] <- plot_model(
-    logit_models_cat[[i]],
-    type = "pred",
-    terms = names(model.frame(logit_models_cat[[i]]))[c(10, 2)],
-    ci.lvl = .834
-  ) +
-    labs(
-      title = NULL,
-      subtitle = paste0("Model ", i + 8),
-      x = NULL,
-      y = NULL,
-      color = "Ex. Constraints?",
-      fill = "Ex. Constraints?"
-    ) +
-    ggpal(
-      aes = "color"
-    ) +
-    ggpal(
-      aes = "fill"
-    ) +
-    theme(
-      plot.subtitle = element_text(hjust = .5),
-      plot.title.position = "panel",
-      legend.position = ifelse(
-        i < 5, "none", "right"
-      )
-    )
-}
-wrap_plots(ps, ncol = 2) +
-  plot_layout(
-    guides = "collect"
-  )
-saveit(4, 12, 8)
+library(socsci)
+library(broom)
+dt |>
+  corr(polity2, v2xlg_legcon)
+dt |>
+  corr(polity2, v2x_polyarchy)
+dt |>
+  corr(v2xlg_legcon, v2x_polyarchy)
 ```
+
+
+```{r}
+dt |>
+  drop_na(theta2_mean) |>
+  summary()
+```
+
+```{r}
+dt |>
+  filter(theta2_mean < 0, polity2 %in% 4:5, miconset_init == 1) |>
+  arrange(-events_init)
+```
+

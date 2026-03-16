@@ -12,7 +12,7 @@ library(democracyData)# access to polity data
 library(vdemdata)     # access to v-dem data
 library(here)         # for file navigation
 source(
-  "https://raw.githubusercontent.com/milesdwilliams15/foreign-figures/refs/heads/main/_helpers/peacesciencer_extras.R"
+  here("_helpers", "_helpers_script.R")
 ) # helpers
 ```
 
@@ -20,35 +20,80 @@ source(
 
 Using the peacesciencer R package, this code will create a leader-year dataset from 1875 to 2004 and then populate it with relevant variables for the analysis.
 
+[fix so that MIC initiation is aligned with leader time in office]
 
 ```{r}
-## conflict data
+## create leader-day dataset
+create_leaderdays(standardize = "cow") -> ldrs
+
+## read in MIE dataset
+read_csv(
+      "https://raw.githubusercontent.com/milesdwilliams15/foreign-figures/refs/heads/main/_data/mie-1.0.csv"
+) -> mie
+
+## aggregate to the MIC level
+mie |>
+  mutate(
+    stday = ifelse(stday < 0, 1, stday),
+    date = paste0(styear, "-", stmon, "-", stday) |> ymd()
+  ) -> mie
+mie |>
+  group_by(ccode1, date, micnum) |>
+  summarize(
+    mineventnum = min(eventnum),
+    miconset_init = (mineventnum == 1) + 0,
+    events_init = n()
+  ) |>
+  group_by(ccode1, micnum) |>
+  mutate(
+    events_init = sum(events_init) 
+  ) |>
+  filter(miconset_init == 1) |>
+  ungroup() |>
+  rename(
+    ccode = ccode1
+  ) |>
+  group_by(ccode, date) |>
+  summarize(
+    miconset_init = 1,
+    events_init = sum(events_init)
+  ) |>
+  ungroup() -> mics
+
+## merge by date and ccode
+ldrs |>
+  left_join(mics) -> ldrs
+
+## add 0s 
+ldrs |>
+  mutate(
+    across(ends_with("init"), ~ replace_na(.x, 0))
+  ) -> ldrs
+
+## aggregate to the leader-year
+ldrs |>
+  mutate(
+    year = year(date)
+  ) |>
+  group_by(ccode, leader, year) |>
+  summarize(
+    miconset_init = max(miconset_init),
+    events_init = sum(events_init)
+  ) |>
+  ungroup() -> lydt
+```
+
+Now let's populate the data with everything else.
+
+```{r}
+## conflict data (will let me get peace spells)
 create_stateyears(
   subset_years = 1816:2014
 ) |>
-  add_icd_mics(level = 4) -> micdt
-
-mysum <- function(x) {
-  cx <- 0
-  for(i in 1:length(x)) {
-    if(i == 1) {
-      cx[i] <- 0
-    } else {
-      cx[i] <- (x[i-1] + cx[i-1]) * x[i-1]
-    } 
-  }
-  cx
-}
+  add_icd_mics() -> micdt
 
 micdt |>
-  arrange(year) |>
-  group_by(ccode) |>
-  mutate(
-    peace_spell = mysum(
-      1 - icdmicongoing
-    )
-  ) |>
-  ungroup() -> micdt
+  select(ccode, year, micspell) -> micdt
 
 ## executive restraints data
 plty <- download_polity_annual()
@@ -70,22 +115,26 @@ vd |>
     ),
     year,
     v2x_polyarchy,
-    v2xnp_pres
+    v2xnp_pres,
+    v2xlg_legcon,
+    v2x_jucon
   ) -> vd
 
 create_leaderyears(
   standardize = "cow"
 ) |>
   filter(year %in% 1875:2004) |>
-  add_lwuf() |>
-  group_by(ccode, year) |>
-  summarize(
-    across(
-      ends_with("_mean"), 
-      ~ mean(.x, na.rm = T)
-    )
+  add_lwuf() -> lddt
+  
+create_stateyears() |>
+  add_nmc() |>
+  add_cow_majors() |>
+  add_contiguity() -> controls
+
+lydt |>
+  left_join(
+    lddt, by = c("ccode", "leader", "year")
   ) |>
-  ungroup() |>
   left_join(
     micdt, by = c("ccode", "year")
   ) |>
@@ -94,15 +143,10 @@ create_leaderyears(
   ) |>
   left_join(
     vd, by = c("ccode", "year")
+  ) |>
+  left_join(
+    controls, by = c("ccode", "year")
   ) -> dt
-  
-create_stateyears() |>
-  add_nmc() |>
-  add_cow_majors() |>
-  add_contiguity() -> controls
-
-dt |>
-  left_join(controls) -> dt
 ```
 
 Save the dataset:
